@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>German Vocab — Frontend</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; max-width: 820px; margin: 32px auto; padding: 0 16px; color:#111 }
+    h1 { color: #1f3057 }
+    label { display:block; margin-top:12px; font-weight:600 }
+    input[type=text] { width:100%; padding:8px; font-size:16px; margin-top:6px }
+    button { margin-top:12px; padding:10px 14px; font-size:16px }
+    pre { background:#f7f7fb; padding:12px; border-radius:6px; overflow:auto }
+    .example { margin-top:14px; padding:10px; border-radius:6px; border:1px solid #eee }
+    .error { color: #b00020 }
+    footer { margin-top:28px; font-size:13px; color:#666 }
+    .row { display:flex; gap:8px; align-items:center }
+    .short { width: 260px }
+  </style>
+</head>
+<body>
+  <h1>German Vocab — Enrich</h1>
+  <p>Try a German word or short phrase below. This page will POST to the backend service and show the structured result.</p>
+
+  <label for="backendUrl">Backend endpoint</label>
+  <input id="backendUrl" type="text" value="/api/enrich" placeholder="Backend URL (e.g. /api/enrich or https://your-deploy.vercel.app/api/enrich)">
+
+  <label for="word">German word or phrase</label>
+  <input id="word" type="text" placeholder="e.g. Haus, Bibliothek, laufen">
+
+  <div class="row">
+    <button id="go">Enrich</button>
+    <button id="example" class="short">Example: Bibliotek</button>
+  </div>
+
+  <div id="status" style="margin-top:12px"></div>
+
+  <div id="result" style="margin-top:16px"></div>
+
+  <footer>
+    <strong>Notes:</strong> The backend expects a POST JSON body with { "word": "..." } and returns a JSON object with keys <code>correctedGerman</code>, <code>englishTranslation</code>, and <code>examples</code>.
+    If your backend is deployed on a different origin, ensure CORS is enabled on the server or use a proxy.
+  </footer>
+
+<script>
+const backendInput = document.getElementById('backendUrl');
+const wordInput = document.getElementById('word');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const goBtn = document.getElementById('go');
+const exampleBtn = document.getElementById('example');
+
+exampleBtn.addEventListener('click', () => {
+  wordInput.value = 'Bibliotek';
+});
+
+function showStatus(text, isError) {
+  statusEl.textContent = text;
+  statusEl.className = isError ? 'error' : '';
+}
+
+function renderResult(json) {
+  resultEl.innerHTML = '';
+  if (!json) return;
+
+  const title = document.createElement('h2');
+  title.textContent = json.correctedGerman || 'Result';
+  resultEl.appendChild(title);
+
+  const trans = document.createElement('p');
+  trans.innerHTML = '<strong>English:</strong> ' + (json.englishTranslation || '-');
+  resultEl.appendChild(trans);
+
+  if (Array.isArray(json.examples)) {
+    const list = document.createElement('div');
+    list.className = 'example';
+    const heading = document.createElement('strong');
+    heading.textContent = 'Examples';
+    list.appendChild(heading);
+
+    json.examples.forEach((ex) => {
+      const p = document.createElement('p');
+      p.style.margin = '8px 0';
+      p.innerHTML = '<em>' + (ex.german || '') + '</em><br><small>' + (ex.english || '') + '</small>';
+      list.appendChild(p);
+    });
+    resultEl.appendChild(list);
+  }
+
+  // raw JSON
+  const pre = document.createElement('pre');
+  pre.textContent = JSON.stringify(json, null, 2);
+  resultEl.appendChild(pre);
+}
+
+async function enrich() {
+  const backend = (backendInput.value || '/api/enrich').trim();
+  const word = (wordInput.value || '').trim();
+  resultEl.innerHTML = '';
+  if (!word) { showStatus('Please enter a word or phrase.', true); return; }
+
+  showStatus('Sending request...');
+  goBtn.disabled = true;
+
+  try {
+    const res = await fetch(backend, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ word })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      showStatus('Backend error: ' + res.status + ' — ' + text, true);
+      return;
+    }
+
+    const data = await res.json();
+    showStatus('Success');
+    renderResult(data);
+
+  } catch (err) {
+    showStatus('Fetch error: ' + err.message, true);
+  } finally {
+    goBtn.disabled = false;
+  }
+}
+
+goBtn.addEventListener('click', enrich);
+
+// allow pressing Enter in the word field
+wordInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') enrich(); });
+</script>
+</body>
+</html>

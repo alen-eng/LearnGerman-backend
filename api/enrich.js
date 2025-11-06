@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const prompt = `
     You are a helpful German language assistant.
     A user has provided the following German word or phrase: "${word}".
-    Your task is to correct any spelling mistakes and provide a structured JSON response.
+    Your task is to correct if any spelling mistakes and provide a structured JSON response.
     The JSON object must have these exact keys:
     - "correctedGerman": The grammatically correct German word or phrase.
     - "englishTranslation": The common English translation.
