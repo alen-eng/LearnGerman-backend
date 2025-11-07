@@ -12,16 +12,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    // VIBE REBUILD: Initialize the Vertex AI client using the secure Service Account credentials.
-    // This bypasses the entire broken API key system.
-    const vertexAI = new VertexAI({
-      project: process.env.GOOGLE_PROJECT_ID,
-      location: 'us-central1', // A common, stable location
-    });
+    // VIBE REBORN: With the correct environment variable `GOOGLE_APPLICATION_CREDENTIALS` set,
+    // the SDK authenticates automatically. We don't need to pass the project or location.
+    // This is the clean, standard way to do it.
+    const vertexAI = new VertexAI();
 
-    // Instantiate the model
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-1.0-pro', // Using a stable, well-known model name
+      model: 'gemini-1.0-pro',
+      // We can also add safety settings
+      safetySettings: [
+        {
+            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            threshold: 'BLOCK_ONLY_HIGH',
+        },
+      ],
     });
 
     const prompt = `
@@ -35,14 +39,18 @@ export default async function handler(req, res) {
     const resp = await generativeModel.generateContent(prompt);
     const responseData = resp.response;
     
-    // The SDK provides a clean response, but we still parse it to be safe
+    if (!responseData) {
+      console.error("Vertex AI Error: No response data received. Full response:", resp);
+      throw new Error("AI model did not return a valid response.");
+    }
+    
     const textResponse = responseData.candidates[0].content.parts[0].text;
     const enrichedData = JSON.parse(textResponse);
     
     res.status(200).json(enrichedData);
 
   } catch (error) {
-    console.error('Vertex AI SDK Error:', error.message, error.stack);
+    console.error('Vertex AI SDK Error:', error.message);
     res.status(500).json({ error: 'Failed to process request with Vertex AI. See server logs on Vercel.' });
   }
 }
