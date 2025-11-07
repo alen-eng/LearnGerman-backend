@@ -12,14 +12,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    // VIBE REBORN: With the correct environment variable `GOOGLE_APPLICATION_CREDENTIALS` set,
-    // the SDK authenticates automatically. We don't need to pass the project or location.
-    // This is the clean, standard way to do it.
-    const vertexAI = new VertexAI();
+    // VIBE RESTORED: This is the explicit, robust, and correct way.
+    // We provide ALL the information the SDK needs, leaving nothing to chance.
+    // It uses the service account JSON (via GOOGLE_APPLICATION_CREDENTIALS) for AUTHENTICATION,
+    // and the project ID for IDENTIFICATION.
+    const vertexAI = new VertexAI({
+      project: process.env.GOOGLE_PROJECT_ID,
+      location: 'us-central1', 
+    });
 
     const generativeModel = vertexAI.getGenerativeModel({
       model: 'gemini-1.0-pro',
-      // We can also add safety settings
       safetySettings: [
         {
             category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
@@ -39,9 +42,9 @@ export default async function handler(req, res) {
     const resp = await generativeModel.generateContent(prompt);
     const responseData = resp.response;
     
-    if (!responseData) {
-      console.error("Vertex AI Error: No response data received. Full response:", resp);
-      throw new Error("AI model did not return a valid response.");
+    if (!responseData || !responseData.candidates || responseData.candidates.length === 0) {
+      console.error("Vertex AI Error: No candidates in response. Full response:", resp);
+      throw new Error("AI model did not return a valid candidate.");
     }
     
     const textResponse = responseData.candidates[0].content.parts[0].text;
