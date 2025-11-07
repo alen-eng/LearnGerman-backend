@@ -1,4 +1,4 @@
-
+// api/enrich.js
 import { VertexAI } from '@google-cloud/vertexai';
 
 export default async function handler(req, res) {
@@ -11,60 +11,31 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'A "word" string is required in the body' });
   }
 
-  // 3. IMPORTANT: Get the API key from environment variables (NEVER hardcode it)
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'Server configuration error: API key not found' });
-  }
-
-  const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_API_KEY}`;
-  
-  // 4. Craft the prompt for the AI model
-  const prompt = `
-    You are a helpful German language assistant.
-    A user has provided the following German word or phrase: "${word}".
-    Your task is to correct if any spelling mistakes and provide a structured JSON response.
-    The JSON object must have these exact keys:
-    - "correctedGerman": The grammatically correct German word or phrase.
-    - "englishTranslation": The common English translation.
-    - "examples": An array of 3 simple, conversational German sentences using the word, each with its English translation. Each object in the array should have "german" and "english" keys.
-    
-    Example response for the input "Bibliotek":
-    {
-      "correctedGerman": "die Bibliothek",
-      "englishTranslation": "the library",
-      "examples": [
-        { "german": "Ich gehe in die Bibliothek.", "english": "I am going to the library." },
-        { "german": "Die Bibliothek ist heute geschlossen.", "english": "The library is closed today." },
-        { "german": "Wo ist die nächste Bibliothek?", "english": "Where is the next library?" }
-      ]
-    }
-
-    Now, generate the response for: "${word}".
-    Ensure the output is ONLY the JSON object, with no other text or markdown formatting.
-  `;
-
-  // 5. Call the Gemini API
   try {
-    const apiResponse = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
+    // VIBE REBUILD: Initialize the Vertex AI client using the secure Service Account credentials.
+    // This bypasses the entire broken API key system.
+    const vertexAI = new VertexAI({
+      project: process.env.GOOGLE_PROJECT_ID,
+      location: 'us-central1', // A common, stable location
     });
+
+    // Instantiate the model
+    const generativeModel = vertexAI.getGenerativeModel({
+      model: 'gemini-1.0-pro', // Using a stable, well-known model name
+    });
+
+    const prompt = `
+      You are a helpful German language assistant. A user has provided this German word: "${word}".
+      Correct any spelling mistakes and provide a structured JSON response with these exact keys:
+      "correctedGerman", "englishTranslation", and an array of 3 "examples".
+      Each example object must have "german" and "english" keys.
+      Output ONLY the JSON object, without any markdown formatting like \`\`\`json.
+    `;
+
+    const resp = await generativeModel.generateContent(prompt);
+    const responseData = resp.response;
     
-    if (!apiResponse.ok) {
-      const errorData = await apiResponse.text();
-      console.error('Gemini API Error:', errorData);
-      return res.status(apiResponse.status).json({ error: 'Failed to fetch data from AI service' });
-    }
-    
-    const responseData = await apiResponse.json();
-    
-    // 6. Extract and clean the JSON from the AI's response
+    // The SDK provides a clean response, but we still parse it to be safe
     const textResponse = responseData.candidates[0].content.parts[0].text;
     const enrichedData = JSON.parse(textResponse);
     
