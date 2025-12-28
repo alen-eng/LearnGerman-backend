@@ -12,23 +12,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    // VIBE RESTORED: This is the explicit, robust, and correct way.
-    // We provide ALL the information the SDK needs, leaving nothing to chance.
-    // It uses the service account JSON (via GOOGLE_APPLICATION_CREDENTIALS) for AUTHENTICATION,
-    // and the project ID for IDENTIFICATION.
+    // 1. PREPARE CREDENTIALS
+    // Vercel environment variables often escape newlines in private keys, 
+    // so we must replace literal "\n" with actual newlines.
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY
+      ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      : undefined;
+
+    // 2. INITIALIZE VERTEX AI WITH EXPLICIT CREDENTIALS
+    // Instead of looking for a file, we pass the object directly.
     const vertexAI = new VertexAI({
       project: process.env.GOOGLE_PROJECT_ID,
-      location: 'us-central1', 
+      location: 'us-central1',
+      googleAuthOptions: {
+        credentials: {
+          client_email: process.env.GOOGLE_CLIENT_EMAIL,
+          private_key: privateKey,
+        },
+      },
     });
 
+    // 3. MODEL CONFIGURATION
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-1.0-pro',
-      safetySettings: [
-        {
-            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            threshold: 'BLOCK_ONLY_HIGH',
-        },
-      ],
+      model: 'gemini-1.0-pro', 
+      generationConfig: {
+        // Optional: Force simpler output, though 1.0-pro doesn't strictly support responseMimeType: application/json like 1.5 does
+        maxOutputTokens: 500,
+        temperature: 0.2, // Lower temperature for more deterministic/correct JSON
+      },
     });
 
     const prompt = `
@@ -36,24 +47,32 @@ export default async function handler(req, res) {
       Correct any spelling mistakes and provide a structured JSON response with these exact keys:
       "correctedGerman", "englishTranslation", and an array of 3 "examples".
       Each example object must have "german" and "english" keys.
-      Output ONLY the JSON object, without any markdown formatting like \`\`\`json.
+      IMPORTANT: Output ONLY valid JSON. Do not wrap in markdown like \`\`\`json.
     `;
 
     const resp = await generativeModel.generateContent(prompt);
     const responseData = resp.response;
     
     if (!responseData || !responseData.candidates || responseData.candidates.length === 0) {
-      console.error("Vertex AI Error: No candidates in response. Full response:", resp);
       throw new Error("AI model did not return a valid candidate.");
     }
     
-    const textResponse = responseData.candidates[0].content.parts[0].text;
+    // 4. ROBUST PARSING
+    // Even with instructions, AI sometimes adds markdown blocks. We clean them.
+    let textResponse = responseData.candidates[0].content.parts[0].text;
+    
+    // Remove markdown code blocks if present (```json ... ```)
+    textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+
     const enrichedData = JSON.parse(textResponse);
     
     res.status(200).json(enrichedData);
 
   } catch (error) {
-    console.error('Vertex AI SDK Error:', error.message);
-    res.status(500).json({ error: 'Failed to process request with Vertex AI. See server logs on Vercel.' });
+    console.error('Vertex AI SDK Error:', error); // Log the full error object
+    res.status(500).json({ 
+      error: 'Failed to process request.', 
+      details: error.message // Return specific message for easier debugging
+    });
   }
 }
